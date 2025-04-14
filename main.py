@@ -1,30 +1,46 @@
-import os
-
 import boto3
-from botocore.exceptions import ClientError
-
-from variables import topic_arn, queue_url
+import json
 
 sns = boto3.client("sns")
 sqs = boto3.client("sqs")
 
-try:
-    sns.delete_topic(TopicArn=topic_arn)
-    print("Deleted SNS topic:", topic_arn)
-except ClientError as e:
-    print(f"Error deleting SNS topic: {e.response['Error']['Message']}")
+topic_name = "MyTopic"
+topic_arn = sns.create_topic(Name=topic_name)["TopicArn"]
+print("SNS Topic ARN:", topic_arn)
 
-try:
-    sqs.delete_queue(QueueUrl=queue_url)
-    print("Deleted SQS queue:", queue_url)
-except ClientError as e:
-    if e.response["Error"]["Code"] == "AWS.SimpleQueueService.NonExistentQueue":
-        print("SQS queue already deleted or never existed.")
-    else:
-        print(f"Error deleting SQS queue: {e.response['Error']['Message']}")
+queue_name = "MyQueue"
+queue_url = sqs.create_queue(QueueName=queue_name)["QueueUrl"]
+print("SQS Queue URL:", queue_url)
 
-if os.path.exists(".env"):
-    os.remove(".env")
-    print("Deleted .env file")
-else:
-    print(".env file not found")
+queue_attrs = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])
+queue_arn = queue_attrs["Attributes"]["QueueArn"]
+print("SQS Queue ARN:", queue_arn)
+
+policy = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Allow-SNS-SendMessage",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "SQS:SendMessage",
+            "Resource": queue_arn,
+            "Condition": {"ArnEquals": {"aws:SourceArn": topic_arn}},
+        }
+    ],
+}
+
+sqs.set_queue_attributes(QueueUrl=queue_url, Attributes={"Policy": json.dumps(policy)})
+
+sns.subscribe(TopicArn=topic_arn, Protocol="sqs", Endpoint=queue_arn)
+
+env_content = f"""\
+SNS_TOPIC_ARN="{topic_arn}"
+SQS_QUEUE_URL="{queue_url}"
+SQS_QUEUE_ARN="{queue_arn}"
+"""
+
+with open(".env", "w") as f:
+    f.write(env_content)
+
+print("Environment variables written to .env file.")
