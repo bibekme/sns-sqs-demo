@@ -1,4 +1,5 @@
 import boto3
+
 import json
 
 sns = boto3.client("sns")
