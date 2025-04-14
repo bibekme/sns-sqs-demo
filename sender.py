@@ -1,6 +1,6 @@
 import boto3
 
-from variables import topic_arn, queue_arn
+from variables import topic_arn
 
 sns = boto3.client("sns")
 
